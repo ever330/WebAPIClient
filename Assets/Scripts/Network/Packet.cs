@@ -99,7 +99,7 @@ public struct ReqEnterRoomPacket
 public struct ResEnterRoomPacket
 {
     [MarshalAs(UnmanagedType.Bool)]
-    public bool EnterResult;
+    public bool Result;
 }
 
 [Serializable]
@@ -114,8 +114,8 @@ public struct C2SEchoChat
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
 public struct S2CEchoChat
 {
-    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 30)]
-    public string Nickname;
+    [MarshalAs(UnmanagedType.ByValArray, SizeConst = 30)]
+    public byte[] Nickname;
     [MarshalAs(UnmanagedType.ByValArray, SizeConst = 100)]
     public byte[] Chat;
 }
@@ -124,8 +124,8 @@ public struct S2CEchoChat
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
 public struct S2CNewPlayerPacket
 {
-    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 30)]
-    public string Nickname;
+    [MarshalAs(UnmanagedType.ByValArray, SizeConst = 30)]
+    public byte[] Nickname;
 }
 
 [Serializable]
@@ -140,8 +140,8 @@ public struct ReqRoomPlayersPacket
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
 public struct ResRoomPlayersPacket
 {
-    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 30)]
-    public string Nickname;
+    [MarshalAs(UnmanagedType.ByValArray, SizeConst = 30)]
+    public byte[] Nickname;
     [MarshalAs(UnmanagedType.R4)]
     public float PosX;
     [MarshalAs(UnmanagedType.R4)]
@@ -160,6 +160,10 @@ public struct ResRoomPlayersPacket
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
 public struct C2SPlayerInfoPacket
 {
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 30)]
+    public string Nickname;
+    [MarshalAs(UnmanagedType.I4)]
+    public int RoomNum;
     [MarshalAs(UnmanagedType.R4)]
     public float PosX;
     [MarshalAs(UnmanagedType.R4)]

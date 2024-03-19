@@ -18,7 +18,8 @@ public class InGameManager : MonoBehaviour
 
     [SerializeField] private GameObject PlayerPrefab;
     [SerializeField] private GameObject OtherPlayerPrefab;
-    [SerializeField] private Transform SpawnPoint;
+
+    [SerializeField] public Transform SpawnPoint;
 
     [SerializeField] private GameObject ChatBox;
     [SerializeField] private TMP_InputField ChatInputField;
@@ -86,6 +87,7 @@ public class InGameManager : MonoBehaviour
         ClientNetwork.Instance.PacketSend(sendData, PacketId.ReqRoomPlayers);
 
         ClientNetwork.Instance.CurrentSceneName = "InGame";
+        ClientNetwork.Instance.UdpStart();
     }
 
     // Update is called once per frame
@@ -164,10 +166,11 @@ public class InGameManager : MonoBehaviour
         lock (lockObject)
         {
             Tuple<string, string> tempChat = ChatQueue.Dequeue();
-            string nickname = tempChat.Item1;
-            string chat = tempChat.Item2;
+            //string nickname = tempChat.Item1;
+            //string chat = tempChat.Item2;
+            string chatBox = string.Format("{0} : {1}", tempChat.Item1.Trim(), tempChat.Item2.Trim());
             GameObject newChat = Instantiate(ChatPrefab, ContentBox);
-            newChat.GetComponent<TextMeshProUGUI>().text = string.Format("{0} : {1}", nickname, chat);
+            newChat.GetComponent<TextMeshProUGUI>().text = chatBox;
 
             if (ContentBox.childCount > 10)
             {
@@ -200,6 +203,7 @@ public class InGameManager : MonoBehaviour
 
     public void PlayerMove(string nickname, Vector3 playerPos, Vector3 playerForward)
     {
+        Debug.Log(nickname + "¿Ãµø");
         if (Players.ContainsKey(nickname))
         {
             GameObject player = Players[nickname];

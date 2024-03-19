@@ -23,6 +23,7 @@ public class WebServerLogin : MonoBehaviour
     private ClientNetwork clientNetwork;             // 웹 서버를 통한 로그인 성공시 게임서버 접속 시도
     public TextMeshProUGUI TitleNicknameText;
     public GameObject TryLoginImage;
+    public GameObject LoginFailImage;
 
     private bool hasIdCheck;                    // 아이디 중복확인 여부
 
@@ -64,10 +65,15 @@ public class WebServerLogin : MonoBehaviour
 
         if (www.error == null)
         {
+            if (www.downloadHandler.text == "PW Error")
+            {
+                LoginFailImage.SetActive(true);
+            }
+
             Debug.Log(www.downloadHandler.text);    // 데이터 출력
-            clientNetwork.ConnectToServer();
             UserInfo.Instance.Username = www.downloadHandler.text;
             TitleNicknameText.text = www.downloadHandler.text;
+            clientNetwork.ConnectToServer();
         }
         else
         {

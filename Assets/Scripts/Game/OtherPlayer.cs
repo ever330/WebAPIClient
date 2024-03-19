@@ -9,8 +9,8 @@ public class OtherPlayer : MonoBehaviour
     public Vector3 TargetForward { get; set; }
 
     [SerializeField] private float moveSpeed = 10f;
-    [SerializeField] private float jumpSpeed = 10f;
-    [SerializeField] private float gravity = -20;
+    //[SerializeField] private float jumpSpeed = 10f;
+    //[SerializeField] private float gravity = -20;
 
     private float rotationInterpolationSpeed = 8f;
 
@@ -18,6 +18,8 @@ public class OtherPlayer : MonoBehaviour
     void Start()
     {
         cc = gameObject.GetComponent<CharacterController>();
+        TargetPosition = InGameManager.Instance.SpawnPoint.position;
+        TargetForward = InGameManager.Instance.SpawnPoint.forward;
     }
 
     // Update is called once per frame

@@ -24,7 +24,7 @@ public class Player : MonoBehaviour
     private Thread playerInfoSendThread;
 
     private float infoSendTimer;
-    private static float sendTime = 0.5f;
+    private static float sendTime = 0.1f;
 
     // Start is called before the first frame update
     void Start()
@@ -69,16 +69,25 @@ public class Player : MonoBehaviour
         dir.y = yVelocity;
         cc.Move(dir * Time.deltaTime);
 
-        infoSendTimer += Time.deltaTime;
-        if (dir != Vector3.zero && infoSendTimer >= sendTime)
-        {
-            PlayerInfoSend();
-        }
+        ClientNetwork.Instance.PlayerPosX = transform.position.x;
+        ClientNetwork.Instance.PlayerPosY = transform.position.y;
+        ClientNetwork.Instance.PlayerPosZ = transform.position.z;
+        ClientNetwork.Instance.PlayerForX = transform.forward.x;
+        ClientNetwork.Instance.PlayerForY = transform.forward.y;
+        ClientNetwork.Instance.PlayerForZ = transform.forward.z;
+
+        //infoSendTimer += Time.deltaTime;
+        //if (dir != Vector3.zero && infoSendTimer >= sendTime)
+        //{
+        //    PlayerInfoSend();
+        //}
     }
 
     private void PlayerInfoSend()
     {
         C2SPlayerInfoPacket infoPacket = new C2SPlayerInfoPacket();
+        infoPacket.Nickname = ClientNetwork.Instance.Nickname;
+        infoPacket.RoomNum = ClientNetwork.Instance.NowRoomNum;
         infoPacket.PosX = transform.position.x;
         infoPacket.PosY = transform.position.y;
         infoPacket.PosZ = transform.position.z;
@@ -86,7 +95,7 @@ public class Player : MonoBehaviour
         infoPacket.ForY = transform.forward.y;
         infoPacket.ForZ = transform.forward.z;
         byte[] sendData = new Packet<C2SPlayerInfoPacket>(infoPacket).Serialize();
-        Debug.Log("내 위치 정보 전송");
+        //Debug.Log("내 위치 정보 전송");
         ClientNetwork.Instance.PacketSend(sendData, PacketId.C2SPlayerInfo);
         infoSendTimer = 0;
     }
