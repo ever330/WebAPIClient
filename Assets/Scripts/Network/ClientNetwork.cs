@@ -301,7 +301,7 @@ public class ClientNetwork : MonoBehaviour
                     PlayerInfo playerInfo = new PlayerInfo();
                     playerInfo.NickName = Encoding.UTF8.GetString(roomPlayer.Nickname);
                     int nullIndex = playerInfo.NickName.IndexOf('\0');
-                    playerInfo.NickName.Substring(0, nullIndex);
+                    playerInfo.NickName = playerInfo.NickName.Substring(0, nullIndex);
                     Debug.Log(playerInfo.NickName + "Ãß°¡");
                     playerInfo.PosX = roomPlayer.PosX;
                     playerInfo.PosY = roomPlayer.PosY;
@@ -318,9 +318,12 @@ public class ClientNetwork : MonoBehaviour
                     string chat = Encoding.UTF8.GetString(chatPacket.Chat);
                     int nicknameNullIndex = nickname.IndexOf('\0');
                     int chatNullIndex = nickname.IndexOf('\0');
+                    string reName = nickname.Substring(0, nicknameNullIndex);
+                    string reChat = chat.Substring(0, chatNullIndex);
+
                     lock (lockObject)
                     {
-                        InGameManager.Instance.ChatQueue.Enqueue(new Tuple<string, string>(nickname.Substring(0, nicknameNullIndex), chat.Substring(0, chatNullIndex)));
+                        InGameManager.Instance.ChatQueue.Enqueue(new Tuple<string, string>(reName, reChat));
                     }
                     break;
 
@@ -328,8 +331,8 @@ public class ClientNetwork : MonoBehaviour
                     S2CNewPlayerPacket newPlayer = Packet<S2CNewPlayerPacket>.Deserialize(packetData);
                     string name = Encoding.UTF8.GetString(newPlayer.Nickname);
                     int nameNullIndex = name.IndexOf('\0');
-                    name.Substring(0, nameNullIndex);
-                    InGameManager.Instance.NewPlayerQueue.Enqueue(name);
+                    string renewName = name.Substring(0, nameNullIndex);
+                    InGameManager.Instance.NewPlayerQueue.Enqueue(renewName);
                     break;
 
                 //case PacketId.S2CPlayerInfo:
