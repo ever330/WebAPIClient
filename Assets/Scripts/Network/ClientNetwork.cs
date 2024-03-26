@@ -2,10 +2,12 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
 using System.Net;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Runtime.Serialization.Formatters.Binary;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using TMPro;
@@ -18,21 +20,28 @@ public class ClientNetwork : MonoBehaviour
     private readonly object lockObject = new object();
 
     private int tcpPort = 3000;
-    private int ucpPort = 3001;
-    private const string hostIp = "127.0.0.1";
+    private int udpPort = 3001;
+    private string hostIp = "127.0.0.1";
     private byte[] recvBuffer;
     private const int MAXSIZE = 1024;
+    public float sendInterval = 0.1f; // 음성 전송 간격 (초 단위)
 
-    private Socket TcpSocket;
-    private StreamQueue SendQ;
-    private StreamQueue RecvQ;
+    private int FREQUENCY = 44100; // 마이크 샘플링 레이트
+
+    private Socket tcpSocket;
+    private StreamQueue sendQ;
+    private StreamQueue recvQ;
 
     private UdpClient udpSendClient;
     private UdpClient udpReceiveClient;
 
-    private Thread PacketAnalysisThread;
-    private Thread UdpSendThread;
-    private Thread UdpReceiveThread;
+    private Thread packetAnalysisThread;
+    private Thread udpPosSendThread;
+    private Thread udpVoiceSendThread;
+    private Thread udpReceiveThread;
+
+    private AudioSource audioSource;
+    private AudioClip audioClip;
 
     private bool runUdpThread;
 
@@ -56,6 +65,8 @@ public class ClientNetwork : MonoBehaviour
     public float PlayerForX { get; set; }
     public float PlayerForY { get; set; }
     public float PlayerForZ { get; set; }
+
+    private int currentPosition = 0;
 
     void Awake()
     {
@@ -86,16 +97,28 @@ public class ClientNetwork : MonoBehaviour
     // Start is called before the first frame update
     void Start()
     {
-        RecvQ = new StreamQueue(MAXSIZE * 4);
-        SendQ = new StreamQueue(MAXSIZE * 4);
+        recvQ = new StreamQueue(MAXSIZE * 4);
+        sendQ = new StreamQueue(MAXSIZE * 4);
         recvBuffer = new byte[MAXSIZE];
-        TcpSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        tcpSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
 
         AddPlayers = new Queue<PlayerInfo>();
 
         FindPort();
 
         runUdpThread = false;
+
+        audioSource = GetComponent<AudioSource>();
+
+        IPAddress[] localIpAddresses = Dns.GetHostAddresses(Dns.GetHostName()); // 로컬 네트워크의 IP 주소 목록 가져오기
+
+        foreach (IPAddress localIpAddress in localIpAddresses)
+        {
+            if (localIpAddress.ToString() != "172.30.1.100")
+            {
+                // 외부 접속 처리용 포트 및 IP 변경
+            }
+        }
     }
 
     void FindPort()
@@ -120,15 +143,14 @@ public class ClientNetwork : MonoBehaviour
     {
 
     }
-
     public void ConnectToServer()
     {
         Debug.Log("게임 서버 접속 대기중");
         try
         {
-            TcpSocket.BeginConnect(hostIp, tcpPort, new AsyncCallback(ConnectCallBack), TcpSocket);
-            PacketAnalysisThread = new Thread(PacketAnalysis);
-            PacketAnalysisThread.Start();
+            tcpSocket.BeginConnect(hostIp, tcpPort, new AsyncCallback(ConnectCallBack), tcpSocket);
+            packetAnalysisThread = new Thread(PacketAnalysis);
+            packetAnalysisThread.Start();
 
             if (SceneManager.GetActiveScene().name == "MainScene")
             {
@@ -155,9 +177,9 @@ public class ClientNetwork : MonoBehaviour
             Debug.Log("접속성공");
 
             tempSocket.EndConnect(IAR);
-            TcpSocket = tempSocket;
-            TcpSocket.BeginReceive(recvBuffer, 0, recvBuffer.Length, SocketFlags.None,
-                new AsyncCallback(OnReceiveCallBack), TcpSocket);
+            tcpSocket = tempSocket;
+            tcpSocket.BeginReceive(recvBuffer, 0, recvBuffer.Length, SocketFlags.None,
+                new AsyncCallback(OnReceiveCallBack), tcpSocket);
 
             ClientConnectPacket pac = new ClientConnectPacket
             {
@@ -179,8 +201,8 @@ public class ClientNetwork : MonoBehaviour
 
     public void Receive()
     {
-        TcpSocket.BeginReceive(recvBuffer, 0, recvBuffer.Length, SocketFlags.None,
-            new AsyncCallback(OnReceiveCallBack), TcpSocket);
+        tcpSocket.BeginReceive(recvBuffer, 0, recvBuffer.Length, SocketFlags.None,
+            new AsyncCallback(OnReceiveCallBack), tcpSocket);
     }
 
     private void OnReceiveCallBack(IAsyncResult IAR)
@@ -200,7 +222,7 @@ public class ClientNetwork : MonoBehaviour
             {
                 Debug.Log("데이터 수신");
 
-                RecvQ.WriteData(recvBuffer, readSize);
+                recvQ.WriteData(recvBuffer, readSize);
             }
             Receive();
         }
@@ -237,7 +259,7 @@ public class ClientNetwork : MonoBehaviour
 
         sendEventArgs.SetBuffer(sendData, 0, sendData.Length);
 
-        bool pending = TcpSocket.SendAsync(sendEventArgs);
+        bool pending = tcpSocket.SendAsync(sendEventArgs);
 
         if (!pending)
         {
@@ -252,12 +274,12 @@ public class ClientNetwork : MonoBehaviour
 
     private void PacketAnalysis()
     {
-        while (TcpSocket != null)
+        while (tcpSocket != null)
         {
-            if (RecvQ.dataCnt == 0)
+            if (recvQ.dataCnt == 0)
                 continue;
 
-            byte[] totalData = RecvQ.ReadData();
+            byte[] totalData = recvQ.ReadData();
 
             int packetSize = BitConverter.ToInt32(totalData, 0);
             short packetId = BitConverter.ToInt16(totalData, 4);
@@ -269,7 +291,7 @@ public class ClientNetwork : MonoBehaviour
             switch ((PacketId)packetId)
             {
                 case PacketId.ResCreateRoom:
-                    Nickname = TitleNicknameText.text;
+                    //Nickname = TitleNicknameText.text;
                     ResCreateRoomPacket result = Packet<ResCreateRoomPacket>.Deserialize(packetData);
                     NowRoomNum = result.RoomNum;
                     //UdpStart();
@@ -277,7 +299,7 @@ public class ClientNetwork : MonoBehaviour
                     break;
 
                 case PacketId.ResEnterRoom:
-                    Nickname = TitleNicknameText.text;
+                    //Nickname = TitleNicknameText.text;
                     ResEnterRoomPacket enterRes = Packet<ResEnterRoomPacket>.Deserialize(packetData);
                     if (enterRes.Result)
                     {
@@ -293,11 +315,7 @@ public class ClientNetwork : MonoBehaviour
 
 
                 case PacketId.ResRoomPlayers:
-                    Nickname = TitleNicknameText.text;
                     ResRoomPlayersPacket roomPlayer = Packet<ResRoomPlayersPacket>.Deserialize(packetData);
-                    //Vector3 position = new Vector3 { x = roomPlayer.PosX, y = roomPlayer.PosY, z = roomPlayer.PosZ };
-                    //Vector3 forward = new Vector3 { x = roomPlayer.ForX, y = roomPlayer.ForY, z = roomPlayer.ForZ };
-                    //InGameManager.Instance.AddPlayer(roomPlayer.Nickname, position, forward);
                     PlayerInfo playerInfo = new PlayerInfo();
                     playerInfo.NickName = Encoding.UTF8.GetString(roomPlayer.Nickname);
                     int nullIndex = playerInfo.NickName.IndexOf('\0');
@@ -335,24 +353,6 @@ public class ClientNetwork : MonoBehaviour
                     InGameManager.Instance.NewPlayerQueue.Enqueue(renewName);
                     break;
 
-                //case PacketId.S2CPlayerInfo:
-                //    if (CurrentSceneName == "InGame")
-                //    {
-                //        S2CPlayerInfoPacket playerInfoPac = Packet<S2CPlayerInfoPacket>.Deserialize(packetData);
-                //        //Vector3 playerPos = new Vector3 { x = playerInfoPac.PosX, y = playerInfoPac.PosY, z = playerInfoPac.PosZ };
-                //        //Vector3 playerFor = new Vector3 { x = playerInfoPac.ForX, y = playerInfoPac.ForY, z = playerInfoPac.ForZ };
-                //        PlayerInfo info = new PlayerInfo();
-                //        info.NickName = playerInfoPac.Nickname;
-                //        info.PosX = playerInfoPac.PosX;
-                //        info.PosY = playerInfoPac.PosY;
-                //        info.PosZ = playerInfoPac.PosZ;
-                //        info.ForX = playerInfoPac.ForX;
-                //        info.ForY = playerInfoPac.ForY;
-                //        info.ForZ = playerInfoPac.ForZ;
-                //        InGameManager.Instance.PlayerMoveQueue.Enqueue(info);
-                //        //InGameManager.Instance.PlayerMove(playerInfoPac.Nickname, playerPos, playerFor);
-                //    }
-                //    break;
 
                 default:
                     break;
@@ -364,15 +364,20 @@ public class ClientNetwork : MonoBehaviour
 
     public void UdpStart()
     {
-        UdpSendThread = new Thread(SendUDP);
-        UdpSendThread.Start();
-        UdpReceiveThread = new Thread(ReceiveUDP);
-        UdpReceiveThread.Start();
-
         runUdpThread = true;
+
+        udpPosSendThread = new Thread(SendPosUDP);
+        udpPosSendThread.Start();
+        udpReceiveThread = new Thread(ReceiveUDP);
+        udpReceiveThread.Start();
+
+        //udpVoiceSendThread = new Thread(SendVoiceUDP);
+        //udpVoiceSendThread.Start();
+
+        StartCoroutine(SendVoice());
     }
 
-    private void SendUDP()
+    private void SendPosUDP()
     {
         while (runUdpThread)
         {
@@ -403,11 +408,71 @@ public class ClientNetwork : MonoBehaviour
             // 그 다음에 패킷 내용물 추가
             Buffer.BlockCopy(pacData, 0, sendData, sizeBytes.Length + idBytes.Length, pacData.Length);
 
-            IPEndPoint serverEndPoint = new IPEndPoint(IPAddress.Parse(hostIp), ucpPort);
+            //byte[] compressByte = Compress(sendData);
+
+            IPEndPoint serverEndPoint = new IPEndPoint(IPAddress.Parse(hostIp), udpPort);
 
             udpSendClient.Send(sendData, sendData.Length, serverEndPoint);
 
             Thread.Sleep(50);
+        }
+    }
+
+    private IEnumerator SendVoice()
+    {
+        audioClip = Microphone.Start(null, true, 1, FREQUENCY);
+        //audioSource.clip = AudioClip.Create("test", 1 * FREQUENCY, audioClip.channels, FREQUENCY, false);
+
+        //딜레이를 줄이기 위해 추가한 코드
+        while (!(Microphone.GetPosition(null) > 0)) { }
+
+        ////마이크 녹음 재생
+        //audioSource.Play();
+
+        int currentPosition = 0;
+        while (runUdpThread)
+        {
+            // 마이크 입력 데이터 가져오기
+            float[] data = new float[FREQUENCY / 10]; // 샘플링
+            int offset = currentPosition % FREQUENCY;
+            audioClip.GetData(data, offset); // AudioClip으로부터 데이터 가져오기
+
+            // 오디오 데이터를 바이트 배열로 변환하여 전송
+            byte[] pacData = new byte[data.Length * 4]; // float는 4바이트
+            Buffer.BlockCopy(data, 0, pacData, 0, pacData.Length);
+
+            // 패킷의 총 사이즈를 바이트 배열로 변환
+            byte[] sizeBytes = BitConverter.GetBytes(pacData.Length);
+            // 패킷의 아이디를 바이트 배열로 변환
+            byte[] idBytes = BitConverter.GetBytes((short)PacketId.C2SVoice);
+
+            byte[] roomNumBytes = BitConverter.GetBytes(NowRoomNum);
+            byte[] nicknameBytes = Encoding.UTF8.GetBytes(Nickname);
+
+            // 총 사이즈와 내용물을 합칠 바이트 배열
+            byte[] sendData = new byte[sizeBytes.Length + idBytes.Length + roomNumBytes.Length + nicknameBytes.Length + pacData.Length];
+
+            // 맨 앞에 사이즈 추가
+            Array.Copy(sizeBytes, 0, sendData, 0, sizeBytes.Length);
+            // 아이디 추가
+            Buffer.BlockCopy(idBytes, 0, sendData, sizeBytes.Length, idBytes.Length);
+            // 방번호 추가
+            Buffer.BlockCopy(roomNumBytes, 0, sendData, sizeBytes.Length + idBytes.Length, roomNumBytes.Length);
+            // 닉네임 추가
+            Buffer.BlockCopy(nicknameBytes, 0, sendData, sizeBytes.Length + idBytes.Length + roomNumBytes.Length, nicknameBytes.Length);
+            // 그 다음에 패킷 내용물 추가
+            Buffer.BlockCopy(pacData, 0, sendData, sizeBytes.Length + idBytes.Length + roomNumBytes.Length + nicknameBytes.Length, pacData.Length);
+
+            IPEndPoint serverEndPoint = new IPEndPoint(IPAddress.Parse(hostIp), udpPort);
+
+            udpSendClient.Send(sendData, sendData.Length, serverEndPoint);
+
+            yield return new WaitForSeconds(sendInterval);
+
+            currentPosition += data.Length;
+
+            if (currentPosition >= FREQUENCY)
+                currentPosition = 0;
         }
     }
 
@@ -424,13 +489,13 @@ public class ClientNetwork : MonoBehaviour
             int packetSize = BitConverter.ToInt32(data, 0);
             short packetId = BitConverter.ToInt16(data, 4);
 
-            // 패킷 크기만큼의 데이터를 추출
-            byte[] packetData = new byte[packetSize];
-            Buffer.BlockCopy(data, 6, packetData, 0, packetSize);
-
             switch ((PacketId)packetId)
             {
                 case PacketId.S2CPlayerInfo:
+                    // 패킷 크기만큼의 데이터를 추출
+                    byte[] packetData = new byte[packetSize];
+                    Buffer.BlockCopy(data, 6, packetData, 0, packetSize);
+
                     S2CPlayerInfoPacket playerInfoPac = Packet<S2CPlayerInfoPacket>.Deserialize(packetData);
                     PlayerInfo info = new PlayerInfo();
                     info.NickName = playerInfoPac.Nickname;
@@ -442,23 +507,39 @@ public class ClientNetwork : MonoBehaviour
                     info.ForZ = playerInfoPac.ForZ;
                     InGameManager.Instance.PlayerMoveQueue.Enqueue(info);
                     break;
+
+                case PacketId.S2CVoice:
+                    int nicknameLength = data.Length - packetSize - 6;
+                    byte[] nicknameBytes = new byte[nicknameLength];
+
+                    Array.Copy(data, 6, nicknameBytes, 0, data.Length - packetSize - 6);
+                    string nick = Encoding.UTF8.GetString(nicknameBytes);
+
+                    // 패킷 크기만큼의 데이터를 추출
+                    byte[] voiceData = new byte[packetSize];
+                    Buffer.BlockCopy(data, 6 + nicknameLength, voiceData, 0, packetSize);
+
+                    PlayerVoice playerVoice = new PlayerVoice();
+                    playerVoice.NickName = nick;
+                    // 바이트 배열을 float 배열로 변환
+                    playerVoice.VoiceData = new float[packetSize / 4];
+                    System.Buffer.BlockCopy(voiceData, 0, playerVoice.VoiceData, 0, voiceData.Length);
+                    InGameManager.Instance.PlayerVoiceQueue.Enqueue(playerVoice);
+                    break;
             }
         }
     }
 
     private void OnApplicationQuit()
     {
-        //if (PacketAnalysisThread.IsAlive)
-        //    PacketAnalysisThread.Join();
-
-        if (TcpSocket != null)
+        if (tcpSocket != null)
         {
             ClientDisconnectPacket disconnect = new ClientDisconnectPacket();
             byte[] sendData = new Packet<ClientDisconnectPacket>(disconnect).Serialize();
             PacketSend(sendData, PacketId.ClientDisconnect);
 
-            TcpSocket.Close();
-            TcpSocket.Dispose();
+            tcpSocket.Close();
+            tcpSocket.Dispose();
 
             runUdpThread = false;
 

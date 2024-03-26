@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using System.Net;
 using TMPro;
 using UnityEngine;
 using UnityEngine.Networking;
@@ -27,11 +28,21 @@ public class WebServerLogin : MonoBehaviour
 
     private bool hasIdCheck;                    // 아이디 중복확인 여부
 
+    private bool isInnerNet = true;
+
     // Start is called before the first frame update
     void Start()
     {
         hasIdCheck = false;
         clientNetwork = ClientNetwork.Instance;
+
+        IPAddress[] localIpAddresses = Dns.GetHostAddresses(Dns.GetHostName()); // 로컬 네트워크의 IP 주소 목록 가져오기
+
+        foreach (IPAddress localIpAddress in localIpAddresses)
+        {
+            if (localIpAddress.ToString() != "172.30.1.100")
+                isInnerNet = false;
+        }
     }
 
     // Update is called once per frame
@@ -58,6 +69,11 @@ public class WebServerLogin : MonoBehaviour
     {
         string url = $"https://localhost:44341/api/Users?id={IdInput.text}&password={PwInput.text}";
 
+        if (isInnerNet)
+        {
+            // 외부 접속 처리용 포트 및 IP 변경
+        }
+
         UnityWebRequest www = UnityWebRequest.Get(url);
         TryLoginImage.SetActive(true);
 
@@ -74,6 +90,7 @@ public class WebServerLogin : MonoBehaviour
             UserInfo.Instance.Username = www.downloadHandler.text;
             TitleNicknameText.text = www.downloadHandler.text;
             clientNetwork.ConnectToServer();
+            clientNetwork.Nickname = www.downloadHandler.text;
         }
         else
         {
@@ -98,6 +115,11 @@ public class WebServerLogin : MonoBehaviour
     IEnumerator TryIdCheck()
     {
         string url = $"https://localhost:44341/Users/GetUserId?Id={SignupIdInput.text}";
+        
+        if (isInnerNet)
+        {
+            // 외부 접속 처리용 포트 및 IP 변경
+        }
 
         UnityWebRequest www = UnityWebRequest.Get(url);
 
@@ -161,6 +183,12 @@ public class WebServerLogin : MonoBehaviour
     IEnumerator TrySignup()
     {
         string url = $"https://localhost:44341/api/Users";
+        
+        if (isInnerNet)
+        {
+            // 외부 접속 처리용 포트 및 IP 변경
+        }
+
         WWWForm form = new WWWForm();
         form.AddField("Id", SignupIdInput.text);
         form.AddField("Password", SignupPwInput.text);

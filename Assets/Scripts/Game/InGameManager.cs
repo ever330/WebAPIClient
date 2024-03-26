@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using TMPro;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -37,6 +38,9 @@ public class InGameManager : MonoBehaviour
 
     public Queue<string> NewPlayerQueue;
     public Queue<PlayerInfo> PlayerMoveQueue;
+    public Queue<PlayerVoice> PlayerVoiceQueue;
+
+    private int FREQEUNCY = 44100; // 마이크 샘플링 레이트
 
     void Awake()
     {
@@ -71,15 +75,13 @@ public class InGameManager : MonoBehaviour
         User = Instantiate(PlayerPrefab);
         User.transform.position = SpawnPoint.position;
         User.transform.forward = SpawnPoint.forward;
-        Debug.Log(SpawnPoint.forward.x);
-        Debug.Log(SpawnPoint.forward.y);
-        Debug.Log(SpawnPoint.forward.z);
         ChatQueue = new Queue<Tuple<string, string>>();
         RoomNumText.text = Convert.ToString(ClientNetwork.Instance.NowRoomNum);
         NicknameText.text = ClientNetwork.Instance.Nickname;
         Players = new Dictionary<string, GameObject>();
         NewPlayerQueue = new Queue<string>();
         PlayerMoveQueue = new Queue<PlayerInfo>();
+        PlayerVoiceQueue = new Queue<PlayerVoice>();
 
         ReqRoomPlayersPacket reqPlayers = new ReqRoomPlayersPacket();
         reqPlayers.RoomNum = ClientNetwork.Instance.NowRoomNum;
@@ -148,6 +150,12 @@ public class InGameManager : MonoBehaviour
             PlayerInfo info = PlayerMoveQueue.Dequeue();
             PlayerMove(info.NickName, new Vector3 { x = info.PosX, y = info.PosY, z = info.PosZ }, new Vector3 { x = info.ForX, y = info.ForY, z = info.ForZ });
         }
+
+        if (PlayerVoiceQueue.Count != 0)
+        {
+            PlayerVoice voice = PlayerVoiceQueue.Dequeue();
+            PlayerVoicePlay(voice.NickName, voice.VoiceData);
+        }
     }
 
     private void SendChat(string chat)
@@ -199,11 +207,12 @@ public class InGameManager : MonoBehaviour
             }
             scrollRect.verticalNormalizedPosition = 0.0f;
         }
+
+        newPlayer.transform.GetChild(2).GetComponent<TextMeshPro>().text = nickname;
     }
 
     public void PlayerMove(string nickname, Vector3 playerPos, Vector3 playerForward)
     {
-        Debug.Log(nickname + "이동");
         if (Players.ContainsKey(nickname))
         {
             GameObject player = Players[nickname];
@@ -219,6 +228,25 @@ public class InGameManager : MonoBehaviour
         player.GetComponent<OtherPlayer>().TargetPosition = playerPos;
         player.GetComponent<OtherPlayer>().TargetForward = playerForward;
         Players.Add(nickname, player);
+        player.transform.GetChild(2).GetComponent<TextMeshPro>().text = nickname;
+    }
+
+    public void PlayerVoicePlay(string nickname, float[] voice)
+    {
+        if (Players.ContainsKey(nickname))
+        {
+            GameObject player = Players[nickname];
+
+            player.GetComponent<OtherPlayer>().AddVoiceData(voice);
+            //// float 배열을 AudioClip으로 변환
+            //AudioClip audioClip = AudioClip.Create("ReceivedAudio", voice.Length, 1, FREQEUNCY, false);
+            //audioClip.SetData(voice, 0);
+
+            //AudioSource audioSource = player.GetComponent<AudioSource>();
+            //// AudioClip을 AudioSource에 할당하여 재생
+            //audioSource.clip = audioClip;
+            //audioSource.Play();
+        }
     }
 
     public void GoTitleBtnClicked()
